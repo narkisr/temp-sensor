@@ -1,25 +1,41 @@
 #include <Arduino.h>
+#include <SPI.h>
 #include <WiFi.h>
 #include <PubSubClient.h>
-#include "DHT.h"
+#include <Wire.h>
+#include <DHT.h>
 
+// Sensor
+#define DHTPIN 4
+#define DHTTYPE DHT11
+DHT dht(DHTPIN, DHTTYPE);
+
+// Networking
 #define MQTT_VERSION MQTT_VERSION_3_1
-
-IPAddress mqttServer(MQTT_SERVER);
-
+IPAddress mqttServer;
 WiFiClient wifiClient;
-
 PubSubClient client(wifiClient);
 
+void publishTemp(){
+  Serial.println("reading temp");
+  float t = dht.readTemperature();
+  float h = dht.readHumidity();
+  // a "JSON" payload
+  String payload = "{temperature:" + String(t) + ", humidity:" + String(h) +  "}";
+  char buffer[payload.length()+1];
+  payload.toCharArray(buffer, payload.length()+1);
+  client.publish("temp/reading",buffer);
+}
+
 void callback(char* topic, byte* payload, unsigned int length) {
-    Serial.print("Message arrived [");
-    Serial.print(topic);
-    Serial.print("] ");
+    String message;
     for (int i=0;i<length;i++) {
-       Serial.print((char)payload[i]);
+      message += (char)payload[i];
     }
-    Serial.println();
-    client.publish("temp/reading","1");
+    Serial.println(message);
+    if(message == "readTemp") {
+    	publishTemp();
+    }
 }
 
 
@@ -55,8 +71,8 @@ void setupWifi(){
   WiFi.setHostname(HOSTNAME);
 
   while (WiFi.status() != WL_CONNECTED) {
-        delay(500);
-        Serial.print(".");
+    delay(500);
+    Serial.print(".");
   }
 
   Serial.println("");
@@ -66,23 +82,24 @@ void setupWifi(){
 }
 
 void setupMqtt(){
-  Serial.println("Setting up MQTT");
-  client.setServer(mqttServer, 8083);
-  client.setCallback(callback);
-  Serial.println("MQTT setup is done");
+  if(mqttServer.fromString(MQTT_SERVER_IP)) {
+    Serial.println("Setting up MQTT");
+    client.setServer(mqttServer, 8083);
+    client.setCallback(callback);
+    Serial.println("MQTT setup is done");
+  }
 }
-
 
 void setup() {
   Serial.begin(115200);
   setupWifi();
-  delay(5000);
   setupMqtt();
-  Serial.println("Setup done");
+  dht.begin();
+  Serial.println("Setup done!!!!");
 }
 
 void loop() {
-  if (!client.connected()) {
+    if (!client.connected()) {
     Serial.println("Reconnecting to MQTT broker");
     reconnect();
   }
