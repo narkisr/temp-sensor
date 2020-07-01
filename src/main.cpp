@@ -22,14 +22,16 @@ void publishTemp(){
   float h = dht.readHumidity();
   // a "JSON" payload
   String payload = "{temperature:" + String(t) + ", humidity:" + String(h) +  "}";
+  Serial.println("payload is " + payload);
   char buffer[payload.length()+1];
   payload.toCharArray(buffer, payload.length()+1);
-  client.publish("temp/reading",buffer);
+  client.publish("temp/reading" , buffer);
+  Serial.println("published reading");
 }
 
 void callback(char* topic, byte* payload, unsigned int length) {
     String message;
-    for (int i=0;i<length;i++) {
+    for (int i=0 ; i<length ; i++) {
       message += (char)payload[i];
     }
     Serial.println(message);
@@ -46,7 +48,7 @@ bool connect() {
 void reconnect() {
   // Loop until we're reconnected
   while (!client.connected()) {
-    Serial.print("Attempting MQTT connection...");
+    Serial.println("Attempting MQTT connection...");
     if (connect()) {
       Serial.println("connected");
       client.subscribe("temp/control");
