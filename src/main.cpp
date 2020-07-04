@@ -5,6 +5,12 @@
 #include <Wire.h>
 #include <DHT.h>
 
+// Deep sleep
+#define uS_TO_S_FACTOR 1000000
+#define TIME_TO_SLEEP  10
+
+RTC_DATA_ATTR int bootCount = 0;
+
 // Sensor
 #define DHTPIN 4
 #define DHTTYPE DHT11
@@ -17,16 +23,16 @@ WiFiClient wifiClient;
 PubSubClient client(wifiClient);
 
 void publishTemp(){
-  Serial.println("reading temp");
+  log_d("reading temp");
   float t = dht.readTemperature();
   float h = dht.readHumidity();
   // a "JSON" payload
   String payload = "{temperature:" + String(t) + ", humidity:" + String(h) +  "}";
-  Serial.println("payload is " + payload);
+  log_d("payload is %s", payload);
   char buffer[payload.length()+1];
   payload.toCharArray(buffer, payload.length()+1);
-  client.publish("temp/reading" , buffer);
-  Serial.println("published reading");
+  bool result = client.publish("temp/reading" , buffer);
+  log_d("published reading %s", result);
 }
 
 void callback(char* topic, byte* payload, unsigned int length) {
@@ -34,7 +40,7 @@ void callback(char* topic, byte* payload, unsigned int length) {
     for (int i=0 ; i<length ; i++) {
       message += (char)payload[i];
     }
-    Serial.println(message);
+    log_d("Message is %s", message);
     if(message == "readTemp") {
     	publishTemp();
     }
@@ -48,14 +54,13 @@ bool connect() {
 void reconnect() {
   // Loop until we're reconnected
   while (!client.connected()) {
-    Serial.println("Attempting MQTT connection...");
+    log_d("Attempting MQTT connection...");
     if (connect()) {
-      Serial.println("connected");
+      log_d("connected");
       client.subscribe("temp/control");
     } else {
-      Serial.print("failed, rc=");
-      Serial.print(client.state());
-      Serial.println(" try again in 5 seconds");
+      log_d("failed, rc=%d",client.state());
+      log_d("try again in 5 seconds");
       delay(5000);
     }
   }
@@ -64,8 +69,8 @@ void reconnect() {
 // Wifi setup
 
 void setupWifi(){
-  Serial.print("Connecting to ");
-  Serial.println(WIFI_SSID);
+  log_d("Connecting to ");
+  log_d(WIFI_SSID);
 
   WiFi.config(INADDR_NONE, INADDR_NONE, INADDR_NONE);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
@@ -74,36 +79,56 @@ void setupWifi(){
 
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
-    Serial.print(".");
   }
 
-  Serial.println("");
-  Serial.println("WiFi connected");
-  Serial.println("IP address: ");
-  Serial.println(WiFi.localIP());
+  log_d("WiFi connected");
+  log_d("IP address: %s", WiFi.localIP());
 }
 
 void setupMqtt(){
   if(mqttServer.fromString(MQTT_SERVER_IP)) {
-    Serial.println("Setting up MQTT");
+    log_d("Setting up MQTT");
     client.setServer(mqttServer, 8083);
     client.setCallback(callback);
-    Serial.println("MQTT setup is done");
+    log_d("MQTT setup is done");
   }
+}
+
+void closeMqtt(){
+  client.disconnect();
+  wifiClient.flush();
+  while( client.state() != -1 ){
+    delay(10);
+  }
+  wifiClient.stop();
 }
 
 void setup() {
   Serial.begin(115200);
+  delay(1000); // wait for serial to start
+  esp_sleep_enable_timer_wakeup(TIME_TO_SLEEP * uS_TO_S_FACTOR);
+
   setupWifi();
   setupMqtt();
   dht.begin();
-  Serial.println("Setup done!!!!");
+
+  if (!client.connected()) {
+    log_d("Reconnecting to MQTT broker");
+    reconnect();
+  }
+  publishTemp();
+
+  log_d("Going to sleep now");
+  delay(1000);
+  Serial.flush();
+  closeMqtt();
+  esp_deep_sleep_start();
 }
 
 void loop() {
-    if (!client.connected()) {
-    Serial.println("Reconnecting to MQTT broker");
+  /*if (!client.connected()) {
+    log_d("Reconnecting to MQTT broker");
     reconnect();
   }
-  client.loop();
+  client.loop();*/
 }
